@@ -64,7 +64,7 @@ def rust_wasm_bindgen_action(ctx, toolchain, wasm_file, target_output, bindgen_f
     args = ctx.actions.args()
     args.add("--target", target_output)
     args.add("--out-dir", bindgen_wasm_module.dirname)
-    args.add("--out-name", ctx.label.name)
+    args.add("--out-name", ctx.label.name.split("/").pop())
     args.add_all(bindgen_flags)
     args.add(input_file)
 
