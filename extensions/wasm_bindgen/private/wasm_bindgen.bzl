@@ -168,7 +168,8 @@ WASM_BINDGEN_ATTR = {
             [rust_common.crate_info],
         ],
         aspects = [
-            rust_analyzer_aspect,
+            # results in bazel getting stuck in analysis phase, unclear how to debug this issue
+            # rust_analyzer_aspect,
             rustfmt_aspect,
             rust_clippy_aspect,
         ],
