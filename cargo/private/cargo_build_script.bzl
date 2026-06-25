@@ -1,5 +1,6 @@
 """Rules for Cargo build scripts (`build.rs` files)"""
 
+load("@apple_support//lib:apple_support.bzl", "apple_support")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
@@ -97,6 +98,24 @@ def get_cc_compile_args_and_env(cc_toolchain, feature_configuration):
     )
     return cc_c_args, cc_cxx_args, cc_env
 
+# These get replaced with the non-hermetic values magically, and result in
+# absolute paths, so they shouldn't have PWD prefixed.
+# https://github.com/bazelbuild/apple_support/blob/20913e2a9ad4a00a1849a464b856d04b5cd3bdcb/lib/apple_support.bzl#L174-L198
+_BAZEL_PATH_PLACEHOLDERS = [
+    apple_support.path_placeholders.xcode(),
+    apple_support.path_placeholders.sdkroot(),
+]
+
+def _should_prefix_pwd(path):
+    if paths.is_absolute(path):
+        return False
+
+    for placeholder in _BAZEL_PATH_PLACEHOLDERS:
+        if path.startswith(placeholder):
+            return False
+
+    return True
+
 def _prefix_pwd_to_flag(args, flag_variations):
     """Prefix execroot-relative paths for flags that support both concatenated and space-separated forms (unless it ends with `=` or `:`).
 
@@ -142,16 +161,15 @@ def _prefix_pwd_to_flag(args, flag_variations):
             if arg.startswith(flag):
                 path = arg[len(flag):].strip()
 
-                # Don't prefix absolute paths
-                if paths.is_absolute(path):
-                    res.append(arg)
-                else:
+                if _should_prefix_pwd(path):
                     res.append("{}${{pwd}}/{}".format(flag, path))
+                else:
+                    res.append(arg)
                 handled = True
                 break
 
             # Check for space-separated form (only for flags without '=' or ':')
-            if not flag.endswith("=") and not flag.endswith(":") and prefix_next_arg and not paths.is_absolute(arg.strip()):
+            if not flag.endswith("=") and not flag.endswith(":") and prefix_next_arg and _should_prefix_pwd(arg.strip()):
                 res.append("${{pwd}}/{}".format(arg.strip()))
                 handled = True
                 break
@@ -177,7 +195,7 @@ def _prefix_pwd_to_paths(args):
     res = []
     for path in args:
         path = path.strip()
-        if not paths.is_absolute(path):
+        if _should_prefix_pwd(path):
             res.append("${{pwd}}/{}".format(path))
         else:
             res.append(path)
@@ -185,7 +203,7 @@ def _prefix_pwd_to_paths(args):
 
 def _pwd_flags_sysroot(args):
     """Prefix execroot-relative paths in --sysroot= arguments with ${pwd}."""
-    return _prefix_pwd_to_flag(args, ["--sysroot="])
+    return _prefix_pwd_to_flag(args, ["--sysroot=", "--sysroot", "-isysroot"])
 
 def _pwd_flags_fsanitize_ignorelist(args):
     """Prefix execroot-relative paths in -fsanitize-ignorelist= arguments with ${pwd}."""
@@ -228,7 +246,7 @@ def _pwd_flags_direct_libs(args):
     """
     res = []
     for arg in args:
-        if not arg.startswith("-") and not paths.is_absolute(arg) and arg.endswith(_DIRECT_LIB_EXTENSIONS):
+        if not arg.startswith("-") and _should_prefix_pwd(arg) and arg.endswith(_DIRECT_LIB_EXTENSIONS):
             res.append("${{pwd}}/{}".format(arg))
         else:
             res.append(arg)
